@@ -271,6 +271,15 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	var finalResponse *apicompat.ResponsesResponse
 	var usage OpenAIUsage
 
+	// Accumulate text and function call arguments from stream events, because
+	// the terminal response.completed event may not include the full content
+	// in its output items (text is delivered via response.output_text.delta).
+	// Key: (output_index, content_index) → accumulated text
+	type contentKey struct{ outputIdx, contentIdx int }
+	accumulatedText := make(map[contentKey]string)
+	// Key: output_index → accumulated function call arguments
+	accumulatedArgs := make(map[int]string)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -288,17 +297,66 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 			continue
 		}
 
-		// Terminal events carry the complete ResponsesResponse with output + usage.
-		if (event.Type == "response.completed" || event.Type == "response.incomplete" || event.Type == "response.failed") &&
-			event.Response != nil {
-			finalResponse = event.Response
-			if event.Response.Usage != nil {
-				usage = OpenAIUsage{
-					InputTokens:  event.Response.Usage.InputTokens,
-					OutputTokens: event.Response.Usage.OutputTokens,
+		switch event.Type {
+		case "response.output_text.delta":
+			if event.Delta != "" {
+				key := contentKey{event.OutputIndex, event.ContentIndex}
+				accumulatedText[key] += event.Delta
+			}
+		case "response.function_call_arguments.delta":
+			if event.Delta != "" {
+				accumulatedArgs[event.OutputIndex] += event.Delta
+			}
+		case "response.completed", "response.incomplete", "response.failed":
+			if event.Response != nil {
+				finalResponse = event.Response
+				if event.Response.Usage != nil {
+					usage = OpenAIUsage{
+						InputTokens:  event.Response.Usage.InputTokens,
+						OutputTokens: event.Response.Usage.OutputTokens,
+					}
+					if event.Response.Usage.InputTokensDetails != nil {
+						usage.CacheReadInputTokens = event.Response.Usage.InputTokensDetails.CachedTokens
+					}
 				}
-				if event.Response.Usage.InputTokensDetails != nil {
-					usage.CacheReadInputTokens = event.Response.Usage.InputTokensDetails.CachedTokens
+			}
+		}
+	}
+
+	// Patch the final response with accumulated text/arguments from delta events.
+	// The response.completed event from upstream may have an empty Output array
+	// (text was delivered via response.output_text.delta events during the stream).
+	if finalResponse != nil {
+		if len(finalResponse.Output) == 0 && len(accumulatedText) > 0 {
+			// Build output items from accumulated deltas
+			var parts []apicompat.ResponsesContentPart
+			for key, text := range accumulatedText {
+				_ = key // content parts are ordered; for simple cases there's one part
+				parts = append(parts, apicompat.ResponsesContentPart{
+					Type: "output_text",
+					Text: text,
+				})
+			}
+			finalResponse.Output = []apicompat.ResponsesOutput{{
+				Type:    "message",
+				Role:    "assistant",
+				Content: parts,
+				Status:  "completed",
+			}}
+		} else {
+			for i, item := range finalResponse.Output {
+				if item.Type == "message" {
+					for j := range item.Content {
+						key := contentKey{i, j}
+						if text, ok := accumulatedText[key]; ok && item.Content[j].Text == "" {
+							finalResponse.Output[i].Content[j].Text = text
+						}
+					}
+				}
+				if item.Type == "function_call" {
+					if args, ok := accumulatedArgs[i]; ok && item.Arguments == "" {
+						finalResponse.Output[i].Arguments = args
+					}
 				}
 			}
 		}

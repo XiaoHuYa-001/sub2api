@@ -40,7 +40,7 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicRespo
 			}
 		case "message":
 			for _, part := range item.Content {
-				if part.Type == "output_text" && part.Text != "" {
+				if part.Type == "output_text" {
 					blocks = append(blocks, AnthropicContentBlock{
 						Type: "text",
 						Text: part.Text,

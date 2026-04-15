@@ -48,7 +48,7 @@ type AnthropicContentBlock struct {
 	Type string `json:"type"`
 
 	// type=text
-	Text string `json:"text,omitempty"`
+	Text string `json:"text"`
 
 	// type=thinking
 	Thinking string `json:"thinking,omitempty"`
