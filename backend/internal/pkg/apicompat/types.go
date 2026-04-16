@@ -51,7 +51,10 @@ type AnthropicContentBlock struct {
 	Text string `json:"text"`
 
 	// type=thinking
-	Thinking string `json:"thinking,omitempty"`
+	Thinking string `json:"thinking"`
+
+	// type=thinking (signature for verification)
+	Signature string `json:"signature,omitempty"`
 
 	// type=image
 	Source *AnthropicImageSource `json:"source,omitempty"`
