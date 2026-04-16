@@ -121,6 +121,26 @@ func (b AnthropicContentBlock) MarshalJSON() ([]byte, error) {
 	}
 }
 
+// UnmarshalJSON customizes JSON deserialization to populate fields tagged with json:"-".
+func (b *AnthropicContentBlock) UnmarshalJSON(data []byte) error {
+	// Use an alias to avoid infinite recursion and decode all tagged fields.
+	type Alias AnthropicContentBlock
+	var aux struct {
+		Alias
+		Text      string `json:"text"`
+		Thinking  string `json:"thinking"`
+		Signature string `json:"signature"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*b = AnthropicContentBlock(aux.Alias)
+	b.Text = aux.Text
+	b.Thinking = aux.Thinking
+	b.Signature = aux.Signature
+	return nil
+}
+
 // AnthropicImageSource describes the source data for an image content block.
 type AnthropicImageSource struct {
 	Type      string `json:"type"` // "base64"
