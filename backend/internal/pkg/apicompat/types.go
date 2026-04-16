@@ -48,13 +48,13 @@ type AnthropicContentBlock struct {
 	Type string `json:"type"`
 
 	// type=text
-	Text string `json:"text"`
+	Text string `json:"-"`
 
 	// type=thinking
-	Thinking string `json:"thinking"`
+	Thinking string `json:"-"`
 
 	// type=thinking (signature for verification)
-	Signature string `json:"signature,omitempty"`
+	Signature string `json:"-"`
 
 	// type=image
 	Source *AnthropicImageSource `json:"source,omitempty"`
@@ -68,6 +68,57 @@ type AnthropicContentBlock struct {
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"` // string or []AnthropicContentBlock
 	IsError   bool            `json:"is_error,omitempty"`
+}
+
+// MarshalJSON customizes JSON serialization to only include fields relevant to the block type.
+func (b AnthropicContentBlock) MarshalJSON() ([]byte, error) {
+	switch b.Type {
+	case "text":
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}{b.Type, b.Text})
+
+	case "thinking":
+		m := map[string]string{"type": b.Type, "thinking": b.Thinking}
+		if b.Signature != "" {
+			m["signature"] = b.Signature
+		}
+		return json.Marshal(m)
+
+	case "tool_use":
+		return json.Marshal(struct {
+			Type  string          `json:"type"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
+		}{b.Type, b.ID, b.Name, b.Input})
+
+	case "tool_result":
+		type tr struct {
+			Type      string          `json:"type"`
+			ToolUseID string          `json:"tool_use_id"`
+			Content   json.RawMessage `json:"content,omitempty"`
+			IsError   bool            `json:"is_error,omitempty"`
+		}
+		return json.Marshal(tr{b.Type, b.ToolUseID, b.Content, b.IsError})
+
+	case "image":
+		return json.Marshal(struct {
+			Type   string               `json:"type"`
+			Source *AnthropicImageSource `json:"source"`
+		}{b.Type, b.Source})
+
+	default:
+		// Fallback: marshal all non-zero fields
+		type Alias AnthropicContentBlock
+		return json.Marshal(struct {
+			Alias
+			Text      string `json:"text,omitempty"`
+			Thinking  string `json:"thinking,omitempty"`
+			Signature string `json:"signature,omitempty"`
+		}{Alias(b), b.Text, b.Thinking, b.Signature})
+	}
 }
 
 // AnthropicImageSource describes the source data for an image content block.
