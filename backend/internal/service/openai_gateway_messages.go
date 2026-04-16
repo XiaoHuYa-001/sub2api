@@ -127,13 +127,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, fmt.Errorf("get access token: %w", err)
 	}
 
-	// DEBUG: log the actual request body sent upstream
-	logger.L().Info("DEBUG upstream request body",
-		zap.String("account_type", string(account.Type)),
-		zap.Int64("account_id", account.ID),
-		zap.String("body", string(responsesBody)),
-	)
-
 	// 6. Build upstream request
 	upstreamReq, err := s.buildUpstreamRequest(ctx, c, account, responsesBody, token, isStream, promptCacheKey, false)
 	if err != nil {
